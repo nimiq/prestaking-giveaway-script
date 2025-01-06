@@ -1,0 +1,10 @@
+[package]
+name = "prestaking-lottery"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hex = "0.4.3"
+nimiq-vrf = { git = "https://github.com/nimiq/core-rs-albatross" }
+rand = "0.8.5"
+rand_chacha = "0.3.1"
