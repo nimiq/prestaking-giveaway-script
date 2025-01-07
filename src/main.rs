@@ -1,31 +1,38 @@
 use std::vec;
 
-use rand::SeedableRng;
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use nimiq_vrf::{DiscreteDistribution, VrfSeed, VrfUseCase};
+use nimiq_vrf::{DiscreteDistribution, Rng, VrfEntropy, VrfUseCase};
 
+// Replace these with the values from the selected on-chain block
 const BLOCK_NUMBER: u64 = 7557700;
 const BLOCK_HASH: &str = "6bede69541d2cf748f023866d533deaf3819212e40e2af51012c6e1e825f6d94";
 
 fn main() {
-    println!("Hello, world!");
+    // Initialize prize list
+    let mut prize_list = Vec::with_capacity(100);
 
-    let mut prizes = Vec::with_capacity(100);
+    // Add 10 x 3M NIM prizes
     for _ in 0..10 {
-        prizes.push("3M NIM");
-    }
-    for _ in 0..25 {
-        prizes.push("1.5M NIM");
-    }
-    for _ in 0..65 {
-        prizes.push("500k NIM");
+        prize_list.push("3M NIM");
     }
 
-    let mut rng = ChaCha8Rng::seed_from_u64(BLOCK_NUMBER as u64);
-    prizes.shuffle(&mut rng);
-    println!("{:?}", prizes);
+    // Add 25 x 1.5M NIM prizes
+    for _ in 0..25 {
+        prize_list.push("1.5M NIM");
+    }
+
+    // Add 65 x 500k NIM prizes
+    for _ in 0..65 {
+        prize_list.push("500k NIM");
+    }
+
+    // Initialize a random number generator with the block number as the seed
+    let mut prize_list_rng = ChaCha8Rng::seed_from_u64(BLOCK_NUMBER as u64);
+    // Shuffle the prize list with the seeded random number generator
+    prize_list.shuffle(&mut prize_list_rng);
 
     // TODO: Read from csv file
     let mut prestakers = vec![
@@ -51,30 +58,45 @@ fn main() {
         ("cr", 96), ("cs", 97), ("ct", 98), ("cu", 99), ("cv", 100),
     ];
 
-    for i in 0..prizes.len() {
-        let prestakers_ref = &prestakers;
-        let winner = pick_winner(prestakers_ref.to_vec());
-        println!("Winner: {} - {}, {} left", winner, prizes[i], prestakers_ref.len() - 1);
+    // Initialize a random number generator with the block hash as the seed/entropy
+    let hash = hex::decode(BLOCK_HASH).unwrap();
+    let mut entropy = [0u8; 32];
+    assert_eq!(hash.len(), entropy.len());
+    entropy.copy_from_slice(&hash);
+    let lottery_seed = VrfEntropy(entropy);
+    let mut lottery_rng = lottery_seed.rng(VrfUseCase::RewardDistribution);
 
+    // Loop through the prize list and pick a winner for each prize
+    for i in 0..prize_list.len() {
+        let winner = pick_winner(&prestakers, &mut lottery_rng);
+        println!("Winner: {} - {}", winner, prize_list[i],);
+
+        // Remove the winner from the prestakers list to ensure one address can only win one prize
         prestakers.retain(|x| x.0 != winner);
     }
 }
 
-fn pick_winner(data: Vec<(&str, u64)>) -> &str {
+// Pick a winner from a list of eligible prestakers and a stateful random number generator
+fn pick_winner<'a, R>(data: &Vec<(&'a str, u64)>, rng: &mut R) -> &'a str
+where
+    R: Rng,
+{
+    // Initialize two vectors to store the prestaker addresses and their respective points
     let size = data.len();
     let mut prestaker_addresses = Vec::with_capacity(size);
     let mut prestaker_points = Vec::with_capacity(size);
 
     for (address, coin) in data {
         prestaker_addresses.push(address);
-        prestaker_points.push(coin);
+        prestaker_points.push(*coin);
     }
 
-    let seed = VrfSeed::default();
-    let mut rng = seed.rng(VrfUseCase::ValidatorSlotSelection);
-
+    // Create a discrete distribution from the prestaker points
     let lookup = DiscreteDistribution::new(&prestaker_points);
 
-    let index = lookup.sample(&mut rng);
+    // Pick the winner by sampling from the discrete distribution with the given random number generator
+    let index = lookup.sample(rng);
+
+    // Return the address of the winner
     prestaker_addresses[index]
 }
