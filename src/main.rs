@@ -15,22 +15,16 @@ fn main() {
     let mut prize_list = Vec::with_capacity(100);
 
     // Add 10 x 3M NIM prizes
-    for _ in 0..10 {
-        prize_list.push("3M NIM");
-    }
+    prize_list.resize(10, "3M NIM");
 
     // Add 25 x 1.5M NIM prizes
-    for _ in 0..25 {
-        prize_list.push("1.5M NIM");
-    }
+    prize_list.resize(10 + 25, "1.5M NIM");
 
     // Add 65 x 500k NIM prizes
-    for _ in 0..65 {
-        prize_list.push("500k NIM");
-    }
+    prize_list.resize(10 + 25 + 65, "500k NIM");
 
     // Initialize a random number generator with the block number as the seed
-    let mut prize_list_rng = ChaCha8Rng::seed_from_u64(BLOCK_NUMBER as u64);
+    let mut prize_list_rng = ChaCha8Rng::seed_from_u64(BLOCK_NUMBER);
     // Shuffle the prize list with the seeded random number generator
     prize_list.shuffle(&mut prize_list_rng);
 
@@ -67,9 +61,9 @@ fn main() {
     let mut lottery_rng = lottery_seed.rng(VrfUseCase::RewardDistribution);
 
     // Loop through the prize list and pick a winner for each prize
-    for i in 0..prize_list.len() {
+    for prize in prize_list {
         let winner = pick_winner(&prestakers, &mut lottery_rng);
-        println!("Winner: {} - {}", winner, prize_list[i],);
+        println!("Winner: {} - {}", winner, prize);
 
         // Remove the winner from the prestakers list to ensure one address can only win one prize
         prestakers.retain(|x| x.0 != winner);
