@@ -5,39 +5,68 @@ use rand_chacha::ChaCha8Rng;
 
 use nimiq_vrf::{DiscreteDistribution, Rng, VrfEntropy, VrfUseCase};
 
-// Replace these with the values from the selected on-chain block
-const BLOCK_NUMBER: u64 = 7557700;
-const BLOCK_HASH: &str = "6bede69541d2cf748f023866d533deaf3819212e40e2af51012c6e1e825f6d94";
-
 fn main() {
-    if let Err(err) = run() {
+    // Read arguments from the command line
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 4 {
+        println!("Usage: {} <round> <block_number> <block_hash>", args[0]);
+        process::exit(1);
+    }
+    let round = args[1].parse().unwrap();
+    let block_number = args[2].parse().unwrap();
+    let block_hash = &args[3];
+
+    println!("Round: {}", round);
+    println!("Block number: {}", block_number);
+    println!("Block hash: {}\n", block_hash);
+
+    if let Err(err) = run(round, block_number, block_hash) {
         println!("{}", err);
         process::exit(1);
     }
 }
 
-fn run() -> Result<(), Box<dyn Error>> {
+fn run(round: u8, block_number: u32, block_hash: &str) -> Result<(), Box<dyn Error>> {
     // Initialize prize list
-    let mut prize_list = Vec::with_capacity(100);
+    let mut prize_list = Vec::new();
 
-    // Add 10 x 3M NIM prizes
-    prize_list.resize(10, "3M NIM");
-
-    // Add 25 x 1.5M NIM prizes
-    prize_list.resize(10 + 25, "1.5M NIM");
-
-    // Add 65 x 500k NIM prizes
-    prize_list.resize(10 + 25 + 65, "500k NIM");
+    match round {
+        1 => {
+            prize_list.resize(3, "3M NIM");
+            prize_list.resize(3 + 8, "1.5M NIM");
+            prize_list.resize(3 + 8 + 21, "500k NIM");
+        }
+        2 => {
+            prize_list.resize(3, "3M NIM");
+            prize_list.resize(3 + 8, "1.5M NIM");
+            prize_list.resize(3 + 8 + 22, "500k NIM");
+        }
+        3 => {
+            prize_list.resize(4, "3M NIM");
+            prize_list.resize(4 + 9, "1.5M NIM");
+            prize_list.resize(4 + 9 + 22, "500k NIM");
+        }
+        _ => {
+            println!("Invalid round number");
+            process::exit(1);
+        }
+    }
 
     // Initialize a random number generator with the block number as the seed
-    let mut prize_list_rng = ChaCha8Rng::seed_from_u64(BLOCK_NUMBER);
+    let mut prize_list_rng = ChaCha8Rng::seed_from_u64(block_number as u64);
     // Shuffle the prize list with the seeded random number generator
     prize_list.shuffle(&mut prize_list_rng);
 
     let mut prestakers: Vec<(String, f32)> = Vec::new();
 
     // Populate the eligible prestakers list from a CSV file
-    let file = File::open("./prestakers.csv")?;
+    let file = File::open(format!("./prestakers-round{}.csv", round)).map_err(|e| {
+        format!(
+            "Cannot open file {}: {}",
+            format!("./prestakers-round{}.csv", round),
+            e,
+        )
+    })?;
     let mut reader = csv::Reader::from_reader(file);
     for result in reader.records() {
         let record = result?;
@@ -47,18 +76,22 @@ fn run() -> Result<(), Box<dyn Error>> {
         ));
     }
 
+    println!("Eligible prestakers: {}", prestakers.len());
+
     // Initialize a random number generator with the block hash as the seed/entropy
-    let hash = hex::decode(BLOCK_HASH).unwrap();
+    let hash = hex::decode(block_hash).unwrap();
     let mut entropy = [0u8; 32];
     assert_eq!(hash.len(), entropy.len());
     entropy.copy_from_slice(&hash);
     let lottery_seed = VrfEntropy(entropy);
     let mut lottery_rng = lottery_seed.rng(VrfUseCase::RewardDistribution);
 
+    println!("\nAddress, Prize");
+
     // Loop through the prize list and pick a winner for each prize
     for prize in prize_list {
         let winner = pick_winner(&prestakers, &mut lottery_rng);
-        println!("Winner: {} - {}", winner, prize);
+        println!("{}, {}", winner, prize);
 
         // Remove the winner from the prestakers list to ensure one address can only win one prize
         prestakers.retain(|x| x.0 != winner);
